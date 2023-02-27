@@ -10,7 +10,29 @@
         <script src="lib/three.min.js"></script>
         <script src="lib/ammo.js"></script>
         <script src="lib/dat.gui.min.js"></script>
-        <script src="lib/OutlinePass.js"></script>
+        <script src="lib/stats.min.js"></script>
         <script src="main.js"></script>
+        <script id="fragmentshader" type="x-shader/x-fragment">
+            varying vec2 vUv;
+			uniform sampler2D tDiffuse;
+
+			void main() {
+
+				gl_FragColor = texture2D( tDiffuse, vUv );
+			}
+        </script>
+        <script  id="vertexshader" type="x-shader/x-vertex">
+            varying vec2 vUv;
+
+			void main() {
+
+				vUv = uv;
+				gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+			}
+        </script>
+
+        <div id="devWindow">
+
+        </div>
     </body>
 </html>
