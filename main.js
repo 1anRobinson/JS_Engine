@@ -2,23 +2,206 @@
 let physicsWorld, // physics world object
 stats,            // frame data and such
 devWindow,          // html fucking div
+playerWindow,     // player POV
 scene,            // threejs scene
 camera,           // threejs camera
+playerCamera,
 renderer,        // threejs render thingy
 rigidBodies = [], tmpTrans, // array for all threejs meshes that have a physics object
                             //  and temporary ammojs transform object
+windowHeight = window.innerHeight,
+windowWidth = window.innerWidth,//window.innerWidth,
+playerWindowHeight = 196,//window.innerHeight, 
+playerWindowWidth = 250,//window.innerWidth,
 raycaster, mouse, intersects = [], selectedObj = null,
 cameraSpeed = 1.5,
 falseCamera, falseScene, renderTexture, screenMaterial, display
-let playerObj = null, moveDirection = {left: 0, right: 0, forward: 0, back: 0}, 
+let playerObj = null, playerTransform, moveDirection = {left: 0, right: 0, forward: 0, back: 0}, 
 cameraMove = {left: false, right: false, forward: false, back: false} 
 let colGroupPlane = 1, colGroupRedBall = 1, colGroupGreenBall = 1, colGroupBlock = 1
 const STATE = {DISABLE_DEACTIVATION : 4}
+
+var playerProps = {
+    playerSpeed : 1.0,
+    X : 0,
+    Y : 0,
+    Z : 0,
+    maxSpeed : 1,
+    scalingFactor : 45,
+    friction : 6,
+    rollingFriction : 20,
+    spawnPlayer: function(X,Y,Z){},
+}
+var ballProps = {
+    X : 0,
+    Y : 0,
+    Z : 0,
+    r : 0,
+    friction : 4,
+    rollingFriction : 10,
+    color : 0x000000,
+    spawnBall: function(){},
+}
+var blockProps = {
+    X : 0,
+    Y : 0,
+    Z : 0,
+    L : 0,
+    W : 0,
+    H : 0,
+    color : 0x2c8726,
+    spawnBlock: function(L,W,H){},
+    static : true
+}
+
+SpawnObjs = 
+{
+    createBall:
+    function()
+    {
+        let quat = {x: 0, y: 0, z: 0, w: 1}
+        let mass = 1
+
+        //threeJS Section
+        var geometry = new THREE.SphereBufferGeometry(ballProps.r)
+        var material = new THREE.MeshToonMaterial({
+            opacity: 0.1,
+            color: ballProps.color,
+            wireframe: ballProps.wireframe,
+        })
+        let ball = new THREE.Mesh(geometry, material)
+        ball.position.set(ballProps.X, ballProps.Y, ballProps.Z)
+        
+        ball.castShadow = true
+        ball.receiveShadow = false
+
+        scene.add(ball)
+
+        //Ammojs Section
+        let transform = new Ammo.btTransform()
+        transform.setIdentity()
+        transform.setOrigin( new Ammo.btVector3( ballProps.X, ballProps.Y, ballProps.Z ) )
+        transform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
+        let motionState = new Ammo.btDefaultMotionState( transform )
+
+        let colShape = new Ammo.btSphereShape( ballProps.r )
+        colShape.setMargin( 0.05 )
+
+        let localInertia = new Ammo.btVector3( ballProps.X, ballProps.Y, ballProps.Z )
+        colShape.calculateLocalInertia( mass, localInertia )
+
+        let rbInfo = new Ammo.btRigidBodyConstructionInfo( mass, motionState, colShape, localInertia )
+        let body = new Ammo.btRigidBody( rbInfo )
+
+        body.setFriction(ballProps.friction);
+        body.setRollingFriction(ballProps.rollingFriction);
+        physicsWorld.addRigidBody( body, colGroupRedBall, colGroupPlane | colGroupGreenBall )
+        
+        ball.userData.physicsBody = body
+        if(ballProps.r > 0) rigidBodies.push(ball)
+    },
+
+    createBlock:
+    function(L,W,H)
+    {    
+        let scale = {x: W, y: H, z: L}
+        let quat = {x: 0, y: 0, z: 0, w: 1}
+        let mass = 0
+
+        //threeJS Section
+        var geometry = new THREE.BoxBufferGeometry()
+        var material = new THREE.MeshToonMaterial({
+            opacity: 0.1,
+            color: blockProps.color,
+        })
+
+        let blockPlane = new THREE.Mesh(geometry, material)
+        blockPlane.position.set(blockProps.X, blockProps.Y, blockProps.Z)
+        blockPlane.scale.set(scale.x, scale.y, scale.z)
+
+        blockPlane.castShadow = true
+        blockPlane.receiveShadow = false
+
+        scene.add(blockPlane)
+
+        //Ammojs Section
+        let transform = new Ammo.btTransform()
+        transform.setIdentity()
+        transform.setOrigin( new Ammo.btVector3( blockProps.X, blockProps.Y, blockProps.Z ) )
+        transform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
+        let motionState = new Ammo.btDefaultMotionState( transform )
+
+        let colShape = new Ammo.btBoxShape( new Ammo.btVector3( scale.x * 0.5, scale.y * 0.5, scale.z * 0.5 ) )
+        colShape.setMargin( 0.05 )
+
+        let localInertia = new Ammo.btVector3( blockProps.X, blockProps.Y, blockProps.Z )
+        colShape.calculateLocalInertia( mass, localInertia )
+
+        let rbInfo = new Ammo.btRigidBodyConstructionInfo( mass, motionState, colShape, localInertia )
+        let body = new Ammo.btRigidBody( rbInfo )
+
+        physicsWorld.addRigidBody( body, colGroupPlane, colGroupRedBall | colGroupGreenBall )
+        blockPlane.userData.physicsBody = body
+        //if(blockProps.L > 0 && blockProps.W > 0 && blockProps.H > 0) 
+        rigidBodies.push(blockPlane)
+    },
+
+    createPlayer:
+    function(X,Y,Z)
+    {
+        // Object defintion stuff
+        
+        let quat = {x: 0, y: 0, z: 0, w: 1}
+        let mass = 1
+        var geometry = new THREE.CapsuleGeometry(5, 5)
+        var material = new THREE.MeshToonMaterial({
+            opacity: 0.1,
+            color: 0xffffff,
+            wireframe: true
+        })
+        let player = playerObj = new THREE.Mesh(geometry, material)
+        player.position.set(X, Y, Z)
+        
+        player.castShadow = true
+        player.receiveShadow = false
+    
+        scene.add(player)
+        
+        // Ammo.js stuff
+        
+        playerTransform = new Ammo.btTransform()
+        playerTransform.setIdentity()
+        playerTransform.setOrigin( new Ammo.btVector3( X, Y, Z ) )
+        playerTransform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
+        let motionState = new Ammo.btDefaultMotionState( playerTransform )
+
+        let colShape = new Ammo.btCapsuleShape(5, 5)
+        colShape.setMargin( 0.05 )
+
+        let localInertia = new Ammo.btVector3(0, 0, 0)
+        colShape.calculateLocalInertia( mass, localInertia )
+
+        let rbInfo = new Ammo.btRigidBodyConstructionInfo( mass, motionState, colShape, localInertia )
+        let body = new Ammo.btRigidBody( rbInfo )
+        let zeroVec = new Ammo.btVector3(0,0,0)
+        body.setAngularFactor(zeroVec)
+
+        physicsWorld.addRigidBody( body, colGroupRedBall, colGroupPlane | colGroupGreenBall )
+        
+        body.setFriction(playerProps.friction)
+        body.setRollingFriction(playerProps.rollingFriction)
+        body.setActivationState(STATE.DISABLE_DEACTIVATION)
+
+        player.userData.physicsBody = body
+        rigidBodies.push(player)
+    }
+}
+
 //Ammojs Initialization
 Ammo().then( start )
 
 /**
- * function to call setup function
+ * function to call the setup functions
  */
 function start()
 {
@@ -26,15 +209,24 @@ function start()
     setupPhysicsWorld() 
     setupGraphics()
     setupGUI()
+    SpawnObjs.createBlock(100,100,2)
+    SpawnObjs.createPlayer(0,4,0)
     animate()
+    
 }
 
+/**
+ * mouse coordinate getter
+ */
 function getMouse(event)
 {
-    mouse.x =  ( event.clientX /window.innerWidth )  * 2 - 1
-    mouse.y = -( event.clientY / window.innerHeight ) * 2 + 1
+    mouse.x =  ( event.clientX /windowWidth )  * 2 - 1
+    mouse.y = -( event.clientY / windowHeight ) * 2 + 1
 }
 
+/**
+ * Key pressed event handler
+ */
 function keyDown(e) 
 {
     console.log(e.keyCode)
@@ -67,7 +259,9 @@ function keyDown(e)
             break
     }
 }
-
+/**
+ * Key released event handler
+ */
 function keyUp(e) {
     switch(e.keyCode)
     {
@@ -99,9 +293,19 @@ function keyUp(e) {
     }
 }
 
+function onWindowResize()
+{
+    camera.aspect = window.innerWidth / window.innerHeight
+    camera.updateProjectionMatrix()
+
+    renderer.setSize( window.innerWidth, window.innerHeight )
+}
+
 window.addEventListener('mousemove', getMouse, false)
 window.addEventListener('keydown', keyDown, false)
 window.addEventListener('keyup', keyUp, false)
+window.addEventListener( 'resize', onWindowResize, false)
+
 
 function onMouseOver()
 {
@@ -111,7 +315,7 @@ function onMouseOver()
     for (let i = 0; i < intersects.length; i++)
     {
         console.log('bruh')
-        intersects[i].object.material.wireframe = true
+        intersects[i].object.material.opacity = 0.00000000000000005
         //intersects[i].object.material.opacity = 0.5
     }
 }
@@ -122,7 +326,7 @@ function onMouseOff()
     {
         if(scene.children[i].material)
         {
-            scene.children[i].material.wireframe = false
+            scene.children[i].material.opacity = 0.1
         }
     }
 }
@@ -150,65 +354,65 @@ function setupGraphics()
     raycaster = new THREE.Raycaster()  // raycaster to shoot from mouse
 
     stats = new Stats()            // statistics object
-    stats.showPanel(0)
-    document.body.appendChild(stats.dom)
+    stats.showPanel(0)             // make it visible
+    document.body.appendChild(stats.dom) // add to html document
 
     scene = new THREE.Scene()         //actual scene
     scene.background = new THREE.Color( 0x282A36 )
 
+    playerPOV = new THREE.Scene()
+    playerPOV.background = new THREE.Color (0xFF00FF)
+
     falseScene = new THREE.Scene()
-    falseScene.background = new THREE.Color( 0xFF00FF )
+    falseScene.background = new THREE.Color( 0xFF0000 )
 
-    // get the div element
     devWindow = document.getElementById('devWindow')
+    playerWindow = document.getElementById('playerWindow')
 
-    //Setup the camera
+    //Setup the cameras
     {
-        camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.2, 5000 )
+        camera = new THREE.PerspectiveCamera( 60, windowWidth / windowHeight, 0.2, 5000 )
         camera.position.set( 0, 15, 50 )
-        // dummyCamera = new THREE.OrthographicCamera(
-        //     window.innerWidth / - 2, 
-        //     window.innerWidth / 2, 
-        //         window.innerHeight / 2,
-        //         window.innerHeight / - 2,
-        //         - 10000, 
-        //         10000 )
-        // dummyCamera.position.z = 1
         camera.lookAt(new THREE.Vector3(0, 0, 0))
+         // Player camera stuff
+        playerCamera = new THREE.PerspectiveCamera( 60, playerWindowWidth / playerWindowHeight, 0.2, 5000 )
+        playerCamera.position.set( playerProps.X, playerProps.Y, playerProps.Z )
     }
-    falseCamera = new THREE.OrthographicCamera(
-        window.innerWidth / -2, 
-        window.innerWidth / 2,
-        window.innerHeight / 2, 
-        window.innerHeight / -2,
-        -10000, 
-        10000)
-    falseCamera.position.z = 1
+    // Fake scene stuff
+    {
+        falseCamera = new THREE.OrthographicCamera(
+            windowWidth / -2, 
+            windowWidth / 2,
+            windowHeight / 2, 
+            windowHeight / -2,
+            -10000, 
+            10000)
+        falseCamera.position.z = 1
 
-    renderTexture = new THREE.WebGLRenderTarget(
-        256, //resolution x
-        256, //resolution y
-        {
-          minFilter: THREE.LinearFilter,
-          magFilter: THREE.NearestFilter,
-          format: THREE.RGBFormat
+        renderTexture = new THREE.WebGLRenderTarget(
+            256, //resolution x
+            256, //resolution y
+            {
+            minFilter: THREE.LinearFilter,
+            magFilter: THREE.NearestFilter,
+            format: THREE.RGBFormat
+            })
+
+        screenMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+            tDiffuse: {value: renderTexture.texture}
+            },
+            vertexShader: document.getElementById('vertexshader').textContent,
+            fragmentShader: document.getElementById('fragmentshader').textContent,
+            depthWrite: false
         })
 
-    screenMaterial = new THREE.ShaderMaterial({
-        uniforms: {
-          tDiffuse: {value: renderTexture.texture}
-        },
-        vertexShader: document.getElementById('vertexshader').textContent,
-        fragmentShader: document.getElementById('fragmentshader').textContent,
-        depthWrite: false
-      })
-
-      // plane to display rendered texture
-      display = new THREE.PlaneGeometry(window.innerWidth, window.innerHeight)
-      quad = new THREE.Mesh(display, screenMaterial)
-      quad.position.z = -100
-      falseScene.add(quad)
-
+        // plane to display rendered texture
+        display = new THREE.PlaneGeometry(windowWidth, windowHeight)
+        quad = new THREE.Mesh(display, screenMaterial)
+        quad.position.z = -100
+        falseScene.add(quad)
+    }
     //Setup the renderer
     {
         renderer = new THREE.WebGLRenderer( { 
@@ -218,13 +422,12 @@ function setupGraphics()
         } )
         renderer.setClearColor( 0xbfd1e5 )
         renderer.setPixelRatio( window.devicePixelRatio)
-        renderer.setSize(window.innerWidth, window.innerHeight )
+        renderer.setSize(windowWidth, windowHeight )
         renderer.gammaInput = false
         renderer.gammaOutput = false
         renderer.shadowMap.enabled = true
         document.body.appendChild( renderer.domElement )
     }
-
     //Add hemisphere light
     {
         let hemiLight = new THREE.HemisphereLight( 0xffffff, 0xffffff, 0.1 )
@@ -233,7 +436,6 @@ function setupGraphics()
         hemiLight.position.set( 0, 50, 0 )
         scene.add( hemiLight )
     }
-
     //Add directional light
     {
         let dirLight = new THREE.DirectionalLight( 0xEA3E6D , 1)
@@ -262,174 +464,9 @@ function setupGUI()
 {
     var gui = new dat.GUI()
 
-    var playerProps = {
-        playerSpeed : 1.0,
-        X : 0,
-        Y : 0,
-        Z : 0,
-        friction : 4,
-        rollingFriction : 10,
-        spawnPlayer: function(){}
-    }
-    var ballProps = {
-        X : 0,
-        Y : 0,
-        Z : 0,
-        r : 0,
-        friction : 4,
-        rollingFriction : 10,
-        spawnBall: function(){},
-        wireframe : false
-    }
-
-    var blockProps = {
-        X : 0,
-        Y : 0,
-        Z : 0,
-        L : 0,
-        W : 0,
-        H : 0,
-        spawnBlock: function(){},
-        wireframe : false,
-        static : true
-    }
-
-    ballProps.spawnBall = 
-        function createBall()
-        {
-            let quat = {x: 0, y: 0, z: 0, w: 1}
-            let mass = 1
-
-            //threeJS Section
-            var geometry = new THREE.SphereBufferGeometry(ballProps.r)
-            var material = new THREE.MeshToonMaterial({
-                opacity: 0.1,
-                color: 0xC24034,
-                wireframe: ballProps.wireframe
-                // blending: THREE.NormalBlending,
-                // depthTest: true,
-            })
-            let ball = new THREE.Mesh(geometry, material)
-            ball.position.set(ballProps.X, ballProps.Y, ballProps.Z)
-            
-            ball.castShadow = true
-            ball.receiveShadow = false
-
-            scene.add(ball)
-
-            //Ammojs Section
-            let transform = new Ammo.btTransform()
-            transform.setIdentity()
-            transform.setOrigin( new Ammo.btVector3( ballProps.X, ballProps.Y, ballProps.Z ) )
-            transform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
-            let motionState = new Ammo.btDefaultMotionState( transform )
-
-            let colShape = new Ammo.btSphereShape( ballProps.r )
-            colShape.setMargin( 0.05 )
-
-            let localInertia = new Ammo.btVector3( ballProps.X, ballProps.Y, ballProps.Z )
-            colShape.calculateLocalInertia( mass, localInertia )
-
-            let rbInfo = new Ammo.btRigidBodyConstructionInfo( mass, motionState, colShape, localInertia )
-            let body = new Ammo.btRigidBody( rbInfo )
-
-            body.setFriction(ballProps.friction);
-            body.setRollingFriction(ballProps.rollingFriction);
-            physicsWorld.addRigidBody( body, colGroupRedBall, colGroupPlane | colGroupGreenBall )
-            
-            ball.userData.physicsBody = body
-            if(ballProps.r > 0) rigidBodies.push(ball)
-        }
-
-    blockProps.spawnBlock = 
-        function createBlock()
-        {    
-            let scale = {x: 100, y: 2, z: 100}
-            let quat = {x: 0, y: 0, z: 0, w: 1}
-            let mass = 0
-
-            //threeJS Section
-            var geometry = new THREE.BoxBufferGeometry()
-            var material = new THREE.MeshToonMaterial({
-                opacity: 0.1,
-                color: 0x7BFA50,
-                wireframe: blockProps.wireframe,
-                // blending: THREE.NormalBlending,
-                // depthTest: true,
-            })
-
-            let blockPlane = new THREE.Mesh(geometry, material)
-            blockPlane.position.set(blockProps.X, blockProps.Y, blockProps.Z)
-            blockPlane.scale.set(scale.x, scale.y, scale.z)
-
-            blockPlane.castShadow = true
-            blockPlane.receiveShadow = false
-
-            scene.add(blockPlane)
-
-            //Ammojs Section
-            let transform = new Ammo.btTransform()
-            transform.setIdentity()
-            transform.setOrigin( new Ammo.btVector3( blockProps.X, blockProps.Y, blockProps.Z ) )
-            transform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
-            let motionState = new Ammo.btDefaultMotionState( transform )
-
-            let colShape = new Ammo.btBoxShape( new Ammo.btVector3( scale.x * 0.5, scale.y * 0.5, scale.z * 0.5 ) )
-            colShape.setMargin( 0.05 )
-
-            let localInertia = new Ammo.btVector3( blockProps.X, blockProps.Y, blockProps.Z )
-            colShape.calculateLocalInertia( mass, localInertia )
-
-            let rbInfo = new Ammo.btRigidBodyConstructionInfo( mass, motionState, colShape, localInertia )
-            let body = new Ammo.btRigidBody( rbInfo )
-
-            physicsWorld.addRigidBody( body, colGroupPlane, colGroupRedBall | colGroupGreenBall )
-            blockPlane.userData.physicsBody = body
-            //if(blockProps.L > 0 && blockProps.W > 0 && blockProps.H > 0) 
-            rigidBodies.push(blockPlane)
-        }
-    playerProps.spawnPlayer = 
-        function createPlayer()
-        {
-            let quat = {x: 0, y: 0, z: 0, w: 1}
-            let mass = 1
-            var geometry = new THREE.CapsuleGeometry(5, 5)
-            var material = new THREE.MeshToonMaterial({
-                opacity: 0.1,
-                color: 0x2ca7db
-            })
-            let player = playerObj = new THREE.Mesh(geometry, material)
-            player.position.set(playerProps.X, playerProps.Y, playerProps.Z)
-            
-            player.castShadow = true
-            player.receiveShadow = false
-
-            scene.add(player)
-
-            let transform = new Ammo.btTransform()
-            transform.setIdentity()
-            transform.setOrigin( new Ammo.btVector3( playerProps.X, playerProps.Y, playerProps.Z ) )
-            transform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
-            let motionState = new Ammo.btDefaultMotionState( transform )
-
-            let colShape = new Ammo.btCapsuleShape(5, 5)
-            colShape.setMargin( 0.05 )
-
-            let localInertia = new Ammo.btVector3( playerProps.X, playerProps.Y, playerProps.Z )
-            colShape.calculateLocalInertia( mass, localInertia )
-
-            let rbInfo = new Ammo.btRigidBodyConstructionInfo( mass, motionState, colShape, localInertia )
-            let body = new Ammo.btRigidBody( rbInfo )
-
-            physicsWorld.addRigidBody( body, colGroupRedBall, colGroupPlane | colGroupGreenBall )
-            
-            body.setFriction(playerProps.friction)
-            body.setRollingFriction(playerProps.rollingFriction)
-            body.setActivationState(STATE.DISABLE_DEACTIVATION)
-
-            player.userData.physicsBody = body
-            rigidBodies.push(player)
-        }
+    ballProps.spawnBall = SpawnObjs.createBall
+    blockProps.spawnBlock = SpawnObjs.createBlock
+    playerProps.spawnPlayer = SpawnObjs.createPlayer
 
     const placeFolder = gui.addFolder('Place...')
     const modifyFolder = gui.addFolder('Modify...')
@@ -449,9 +486,10 @@ function setupGUI()
         ballPos.add(ballProps, 'Y').name('Y Position')
         ballPos.add(ballProps, 'Z').name('Z Position')
         
-        ballFolder.add(ballProps, 'wireframe').name('wireframe')
         ballFolder.add(ballProps, 'r').name('Radius')
+        ballFolder.addColor(ballProps, 'color').name('Ball color')
         ballFolder.add(ballProps, 'spawnBall').name('Place Ball')
+        
     }
     //Block GUI stuff
     {
@@ -460,7 +498,12 @@ function setupGUI()
         blockPos.add(blockProps, 'Y').name('Y Position')
         blockPos.add(blockProps, 'Z').name('Z Position')
 
-        blockFolder.add(blockProps, 'wireframe').name('wireframe')
+        const blockDim = blockFolder.addFolder('Dimensions')
+        blockDim.add(blockProps, 'L').name('Length')
+        blockDim.add(blockProps, 'W').name('Width')
+        blockDim.add(blockProps, 'H').name('Height')
+
+        blockFolder.addColor(blockProps, 'color').name('Block color')
         blockFolder.add(blockProps, 'spawnBlock').name('Place Cube')
     }
     //Player GUI stuff
@@ -476,8 +519,6 @@ function setupGUI()
 
 function movePlayer()
 {
-    let scalingFactor = 20;
-
     let moveX =  moveDirection.right - moveDirection.left;
     let moveZ =  moveDirection.back - moveDirection.forward;
     let moveY =  0; 
@@ -485,10 +526,22 @@ function movePlayer()
     if( moveX == 0 && moveY == 0 && moveZ == 0) return;
 
     let resultantImpulse = new Ammo.btVector3( moveX, moveY, moveZ )
-    resultantImpulse.op_mul(scalingFactor);
+    resultantImpulse.op_mul(playerProps.scalingFactor);
 
     let physicsBody = playerObj.userData.physicsBody;
-    physicsBody.setLinearVelocity( resultantImpulse );
+    // apply force is the most normal 
+    // applyImpulse is the yeet function
+    // setLinearVelocity imposes an even force
+    physicsBody.applyForce( resultantImpulse ); 
+
+    let currVel = playerTransform.getOrigin()
+    let currSpeed = currVel.length();
+    if(currSpeed > playerProps.maxSpeed)
+    {
+        currVel.normalize()
+        currVel.multiplyScalar(playerProps.maxSpeed)
+        playerObj.setLinearVelocity(currVel)
+    }
 }
 
 function animate()
@@ -499,14 +552,14 @@ function animate()
     movePlayer()
 
     if(cameraMove.forward)
-    (camera.position.z--)*cameraSpeed
+    camera.position.z-= cameraSpeed
     
     if(cameraMove.left)
     camera.position.x -= Math.sin(camera.rotation.y + Math.PI/2) * cameraSpeed
     camera.position.z -= -Math.cos(camera.rotation.y + Math.PI/2) * cameraSpeed
     
     if(cameraMove.back)
-    (camera.position.z++)*cameraSpeed 
+    camera.position.z+=cameraSpeed 
     
     if(cameraMove.right)
     camera.position.x -= Math.sin(camera.rotation.y - Math.PI/2) * cameraSpeed
