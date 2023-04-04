@@ -16,21 +16,34 @@ playerWindowWidth = 250,//window.innerWidth,
 raycaster, mouse, intersects = [], selectedObj = null,
 cameraSpeed = 1.5,
 falseCamera, falseScene, renderTexture, screenMaterial, display
-let playerObj = null, playerTransform, moveDirection = {left: 0, right: 0, forward: 0, back: 0}, 
+let playerObj = null, playerTransform,
 cameraMove = {left: false, right: false, forward: false, back: false} 
 let colGroupPlane = 1, colGroupRedBall = 1, colGroupGreenBall = 1, colGroupBlock = 1
 const STATE = {DISABLE_DEACTIVATION : 4}
 
 var playerProps = {
-    playerSpeed : 1.0,
+    playerSpeed : 5,
     X : 0,
     Y : 0,
     Z : 0,
+    jumpForce: 2,
+    jumping: false,
     maxSpeed : 1,
-    scalingFactor : 45,
-    friction : 6,
-    rollingFriction : 20,
+    friction : 2,
+    rollingFriction : 1000,
+    gravity: 6,
+    mass: 3,
     spawnPlayer: function(X,Y,Z){},
+}
+var playerMovement =
+{
+    left: 0, 
+    right: 0, 
+    forward: 0, 
+    back: 0, 
+    up: 0, 
+    jumpTimer: 0,
+    jumpDuration: 1 / 1000000
 }
 var ballProps = {
     X : 0,
@@ -152,7 +165,7 @@ SpawnObjs =
         // Object defintion stuff
         
         let quat = {x: 0, y: 0, z: 0, w: 1}
-        let mass = 1
+        let mass = playerProps.mass
         var geometry = new THREE.CapsuleGeometry(5, 5)
         var material = new THREE.MeshToonMaterial({
             opacity: 0.1,
@@ -200,6 +213,44 @@ SpawnObjs =
 //Ammojs Initialization
 Ammo().then( start )
 
+function movePlayer()
+{
+    let moveX =  playerMovement.right - playerMovement.left;
+    let moveZ =  playerMovement.back - playerMovement.forward;
+
+    if (playerMovement.up == 1) 
+    {
+        // Start the jump
+        timeOfJump = clock.getDelta()
+        playerProps.jumping = true;
+        playerMovement.moveY = playerProps.jumpForce / playerProps.gravity;
+        playerMovement.jumpTimer+= clock.getDelta;
+    } 
+    else if (playerMovement.jumping && playerMovement.jumpTimer < (timeOfJump + playerMovement.jumpDuration)                                   ) 
+    {
+        // Continue the jump
+        playerMovement.moveY = playerProps.jumpForce / playerProps.gravity;
+        playerMovement.jumpTimer+= clock.getDelta;
+    }
+    else
+    {
+        // End the jump
+        playerMovement.moveY = 0
+        playerProps.jumping = false;
+        playerMovement.jumpTimer = 0;
+    }
+
+    if( moveX == 0 && playerMovement.moveY == 0 && moveZ == 0) return;
+
+    let resultantImpulse = new Ammo.btVector3( moveX, playerMovement.moveY, moveZ )
+    resultantImpulse.op_mul(playerProps.playerSpeed);
+
+    let physicsBody = playerObj.userData.physicsBody;
+    // apply force is the most normal 
+    // applyImpulse is the yeet function
+    // setLinearVelocity imposes an even force
+    physicsBody.applyImpulse( resultantImpulse ); 
+}
 /**
  * function to call the setup functions
  */
@@ -212,7 +263,6 @@ function start()
     SpawnObjs.createBlock(100,100,2)
     SpawnObjs.createPlayer(0,4,0)
     animate()
-    
 }
 
 /**
@@ -246,16 +296,19 @@ function keyDown(e)
             break
 
         case 87: // W key
-            moveDirection.forward = 1
+            playerMovement.forward = 1
             break
         case 65: // A key
-            moveDirection.left = 1
+            playerMovement.left = 1
             break
         case 83: // S key
-            moveDirection.back = 1
+            playerMovement.back = 1
             break
         case 68: // D key
-            moveDirection.right = 1
+            playerMovement.right = 1
+            break
+        case 32: //space bar
+            playerMovement.up = 1
             break
     }
 }
@@ -279,17 +332,20 @@ function keyUp(e) {
             break
         
         case 87: // W key
-            moveDirection.forward = 0
+            playerMovement.forward = 0
             break
         case 65: // A key
-            moveDirection.left = 0
+            playerMovement.left = 0
             break
         case 83: // S key
-            moveDirection.back = 0
+            playerMovement.back = 0
             break
         case 68: // D key
-            moveDirection.right = 0
+            playerMovement.right = 0
             break
+        case 32: //space bar
+        playerMovement.up = 0 
+        break
     }
 }
 
@@ -305,7 +361,6 @@ window.addEventListener('mousemove', getMouse, false)
 window.addEventListener('keydown', keyDown, false)
 window.addEventListener('keyup', keyUp, false)
 window.addEventListener( 'resize', onWindowResize, false)
-
 
 function onMouseOver()
 {
@@ -517,36 +572,9 @@ function setupGUI()
     }
 }
 
-function movePlayer()
-{
-    let moveX =  moveDirection.right - moveDirection.left;
-    let moveZ =  moveDirection.back - moveDirection.forward;
-    let moveY =  0; 
-
-    if( moveX == 0 && moveY == 0 && moveZ == 0) return;
-
-    let resultantImpulse = new Ammo.btVector3( moveX, moveY, moveZ )
-    resultantImpulse.op_mul(playerProps.scalingFactor);
-
-    let physicsBody = playerObj.userData.physicsBody;
-    // apply force is the most normal 
-    // applyImpulse is the yeet function
-    // setLinearVelocity imposes an even force
-    physicsBody.applyForce( resultantImpulse ); 
-
-    let currVel = playerTransform.getOrigin()
-    let currSpeed = currVel.length();
-    if(currSpeed > playerProps.maxSpeed)
-    {
-        currVel.normalize()
-        currVel.multiplyScalar(playerProps.maxSpeed)
-        playerObj.setLinearVelocity(currVel)
-    }
-}
-
 function animate()
 {
-    requestAnimationFrame(animate)
+       requestAnimationFrame(animate)
     stats.begin()
     let deltaTime = clock.getDelta()
     movePlayer()
