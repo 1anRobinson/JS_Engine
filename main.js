@@ -1,50 +1,57 @@
 //variable declaration
 let physicsWorld, // physics world object
 stats,            // frame data and such
-devWindow,          // html fucking div
-playerWindow,     // player POV
+
 scene,            // threejs scene
-camera,           // threejs camera
-playerCamera,
+camera,
 renderer,        // threejs render thingy
+
+playerScene,     // player POV scene
+playerCamera,
+playerRender,
+
 rigidBodies = [], tmpTrans, // array for all threejs meshes that have a physics object
                             //  and temporary ammojs transform object
-windowHeight = window.innerHeight,
-windowWidth = window.innerWidth,//window.innerWidth,
-playerWindowHeight = 196,//window.innerHeight, 
-playerWindowWidth = 250,//window.innerWidth,
+windowHeight = window.innerHeight, windowWidth = window.innerWidth,//window.innerWidth,
+
 raycaster, mouse, intersects = [], selectedObj = null,
 cameraSpeed = 1.5,
-falseCamera, falseScene, renderTexture, screenMaterial, display
+
+falseCamera, falseScene, renderTexture, screenMaterial, display,
+falseCamera2, falseScene2, renderTexture2, screenMaterial2, display2
+
 let playerObj = null, playerTransform,
 cameraMove = {left: false, right: false, forward: false, back: false} 
 let colGroupPlane = 1, colGroupRedBall = 1, colGroupGreenBall = 1, colGroupBlock = 1
 const STATE = {DISABLE_DEACTIVATION : 4}
 
-var playerProps = {
-    playerSpeed : 5,
-    X : 0,
-    Y : 0,
-    Z : 0,
-    jumpForce: 2,
-    jumping: false,
-    maxSpeed : 1,
-    friction : 2,
-    rollingFriction : 1000,
-    gravity: 6,
-    mass: 3,
-    spawnPlayer: function(X,Y,Z){},
+{ //player variables
+    var playerProps = {
+        playerSpeed : 45,
+        X : 0,
+        Y : 0,
+        Z : 0,
+        jumpForce: 2,
+        jumping: false,
+        maxSpeed : 1,
+        friction : 2,
+        rollingFriction : 1000,
+        gravity: 6,
+        mass: 3,
+        spawnPlayer: function(X,Y,Z){},
+    }
+    var playerMovement =
+    {
+        left: 0, 
+        right: 0, 
+        forward: 0, 
+        back: 0, 
+        up: 0, 
+        jumpTimer: 0,
+        jumpDuration: 1 / 1000000
+    }
 }
-var playerMovement =
-{
-    left: 0, 
-    right: 0, 
-    forward: 0, 
-    back: 0, 
-    up: 0, 
-    jumpTimer: 0,
-    jumpDuration: 1 / 1000000
-}
+
 var ballProps = {
     X : 0,
     Y : 0,
@@ -83,12 +90,19 @@ SpawnObjs =
             wireframe: ballProps.wireframe,
         })
         let ball = new THREE.Mesh(geometry, material)
+        let ball2 = new THREE.Mesh(geometry, material)
+
         ball.position.set(ballProps.X, ballProps.Y, ballProps.Z)
-        
+        ball2.position.set(ballProps.X, ballProps.Y, ballProps.Z)
+
         ball.castShadow = true
         ball.receiveShadow = false
 
+        ball2.castShadow = true
+        ball2.receiveShadow = false
+
         scene.add(ball)
+        playerScene.add(ball2)
 
         //Ammojs Section
         let transform = new Ammo.btTransform()
@@ -111,7 +125,11 @@ SpawnObjs =
         physicsWorld.addRigidBody( body, colGroupRedBall, colGroupPlane | colGroupGreenBall )
         
         ball.userData.physicsBody = body
-        if(ballProps.r > 0) rigidBodies.push(ball)
+        ball2.userData.physicsBody = body
+
+        if(ballProps.r > 0)
+        {rigidBodies.push(ball) 
+         rigidBodies.push(ball2)} 
     },
 
     createBlock:
@@ -129,13 +147,22 @@ SpawnObjs =
         })
 
         let blockPlane = new THREE.Mesh(geometry, material)
+        let blockPlane2 = new THREE.Mesh(geometry, material)
+
         blockPlane.position.set(blockProps.X, blockProps.Y, blockProps.Z)
         blockPlane.scale.set(scale.x, scale.y, scale.z)
 
+        blockPlane2.position.set(blockProps.X, blockProps.Y, blockProps.Z)
+        blockPlane2.scale.set(scale.x, scale.y, scale.z)
+        
         blockPlane.castShadow = true
         blockPlane.receiveShadow = false
 
+        blockPlane2.castShadow = true
+        blockPlane2.receiveShadow = false
+
         scene.add(blockPlane)
+        playerScene.add(blockPlane2)
 
         //Ammojs Section
         let transform = new Ammo.btTransform()
@@ -155,12 +182,15 @@ SpawnObjs =
 
         physicsWorld.addRigidBody( body, colGroupPlane, colGroupRedBall | colGroupGreenBall )
         blockPlane.userData.physicsBody = body
+        blockPlane2.userData.physicsBody = body
+
         //if(blockProps.L > 0 && blockProps.W > 0 && blockProps.H > 0) 
         rigidBodies.push(blockPlane)
+        rigidBodies.push(blockPlane2)
     },
 
     createPlayer:
-    function(X,Y,Z)
+    function(X, Y, Z)
     {
         // Object defintion stuff
         
@@ -173,18 +203,28 @@ SpawnObjs =
             wireframe: true
         })
         let player = playerObj = new THREE.Mesh(geometry, material)
+        let player2 = playerObj = new THREE.Mesh(geometry, material)
+
         player.position.set(X, Y, Z)
+        player2.position.set(X, Y, Z)
+        
+        // player.position.set(playerProps.X, playerProps.Y, playerProps.Z)
+
         
         player.castShadow = true
         player.receiveShadow = false
+
+        player2.castShadow = true
+        player2.receiveShadow = false
     
         scene.add(player)
+        scene.add(player2)
         
         // Ammo.js stuff
         
         playerTransform = new Ammo.btTransform()
         playerTransform.setIdentity()
-        playerTransform.setOrigin( new Ammo.btVector3( X, Y, Z ) )
+        playerTransform.setOrigin( new Ammo.btVector3(X, Y, Z ) )
         playerTransform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
         let motionState = new Ammo.btDefaultMotionState( playerTransform )
 
@@ -206,7 +246,11 @@ SpawnObjs =
         body.setActivationState(STATE.DISABLE_DEACTIVATION)
 
         player.userData.physicsBody = body
+        player2.userData.physicsBody = body
+
         rigidBodies.push(player)
+        rigidBodies.push(player2)
+
     }
 }
 
@@ -262,7 +306,8 @@ function start()
     setupGUI()
     SpawnObjs.createBlock(100,100,2)
     SpawnObjs.createPlayer(0,4,0)
-    animate()
+    animate1()
+    animate2()
 }
 
 /**
@@ -354,7 +399,11 @@ function onWindowResize()
     camera.aspect = window.innerWidth / window.innerHeight
     camera.updateProjectionMatrix()
 
+    playerCamera.aspect = window.innerWidth / window.innerHeight
+    playerCamera.updateProjectionMatrix()
+
     renderer.setSize( window.innerWidth, window.innerHeight )
+    playerRender.setSize(window.innerWidth, window.innerHeight )
 }
 
 window.addEventListener('mousemove', getMouse, false)
@@ -410,19 +459,19 @@ function setupGraphics()
 
     stats = new Stats()            // statistics object
     stats.showPanel(0)             // make it visible
-    document.body.appendChild(stats.dom) // add to html document
+    document.body.appendChild(stats.dom) // add stats to html document
 
     scene = new THREE.Scene()         //actual scene
     scene.background = new THREE.Color( 0x282A36 )
 
-    playerPOV = new THREE.Scene()
-    playerPOV.background = new THREE.Color (0xFF00FF)
+    playerScene = new THREE.Scene()
+    playerScene.background = new THREE.Color (0xFF00FF)
 
     falseScene = new THREE.Scene()
     falseScene.background = new THREE.Color( 0xFF0000 )
 
-    devWindow = document.getElementById('devWindow')
-    playerWindow = document.getElementById('playerWindow')
+    falseScene2 = new THREE.Scene()
+    falseScene2.background = new THREE.Color( 0xFF00FF )
 
     //Setup the cameras
     {
@@ -430,8 +479,9 @@ function setupGraphics()
         camera.position.set( 0, 15, 50 )
         camera.lookAt(new THREE.Vector3(0, 0, 0))
          // Player camera stuff
-        playerCamera = new THREE.PerspectiveCamera( 60, playerWindowWidth / playerWindowHeight, 0.2, 5000 )
+        playerCamera = new THREE.PerspectiveCamera( 60, windowWidth / windowHeight, 0.2, 5000 )
         playerCamera.position.set( playerProps.X, playerProps.Y, playerProps.Z )
+        //playerCamera.lookAt(new THREE.Vector3(0, 0, 0))
     }
     // Fake scene stuff
     {
@@ -468,12 +518,52 @@ function setupGraphics()
         quad.position.z = -100
         falseScene.add(quad)
     }
+
+    // {
+    //     falseCamera2 = new THREE.OrthographicCamera(
+    //         windowWidth / -2, 
+    //         windowWidth / 2,
+    //         windowHeight / 2, 
+    //         windowHeight / -2,
+    //         -10000, 
+    //         10000)
+    //     falseCamera2.position.x = playerProps.X
+    //     falseCamera2.position.y = playerProps.Y
+    //     falseCamera2.position.z = playerProps.Z
+
+    //     renderTexture2 = new THREE.WebGLRenderTarget(
+    //         256, //resolution x
+    //         256, //resolution y
+    //         {
+    //         minFilter: THREE.LinearFilter,
+    //         magFilter: THREE.NearestFilter,
+    //         format: THREE.RGBFormat
+    //         })
+
+    //     screenMaterial2 = new THREE.ShaderMaterial({
+    //         uniforms: {
+    //         tDiffuse: {value: renderTexture2.texture}
+    //         },
+    //         vertexShader: document.getElementById('vertexshader').textContent,
+    //         fragmentShader: document.getElementById('fragmentshader').textContent,
+    //         depthWrite: false
+    //     })
+
+    //     // plane to display rendered texture
+    //     display2 = new THREE.PlaneGeometry(windowWidth, windowHeight)
+    //     quad2 = new THREE.Mesh(display2, screenMaterial2)
+    //     quad2.position.z = -100
+    //     falseScene2.add(quad2)
+    // }
+
     //Setup the renderer
     {
+
         renderer = new THREE.WebGLRenderer( { 
+            canvas: document.getElementById('devWindow'),
             antialias: false,
             precision: "lowp",
-            powerPreference: "low-power",
+            powerPreference: "low-power"
         } )
         renderer.setClearColor( 0xbfd1e5 )
         renderer.setPixelRatio( window.devicePixelRatio)
@@ -482,6 +572,20 @@ function setupGraphics()
         renderer.gammaOutput = false
         renderer.shadowMap.enabled = true
         document.body.appendChild( renderer.domElement )
+
+        playerRender = new THREE.WebGL1Renderer({
+            canvas: document.getElementById('playerPOV'),
+            antialias: false,
+            precision: "lowp",
+            powerPreference: "low-power"
+        })
+        playerRender.setClearColor( 0xbfd1e5 )
+        playerRender.setPixelRatio( window.devicePixelRatio)
+        playerRender.setSize(windowWidth, windowHeight )
+        playerRender.gammaInput = false
+        playerRender.gammaOutput = false
+        playerRender.shadowMap.enabled = true
+        document.body.appendChild( playerRender.domElement )
     }
     //Add hemisphere light
     {
@@ -489,7 +593,14 @@ function setupGraphics()
         hemiLight.color.setHSL( 0.6, 0.6, 0.6 )
         hemiLight.groundColor.setHSL( 0.1, 1, 0.4 )
         hemiLight.position.set( 0, 50, 0 )
+
+        let hemiLight2 = new THREE.HemisphereLight( 0xffffff, 0xffffff, 0.1 )
+        hemiLight2.color.setHSL( 0.6, 0.6, 0.6 )
+        hemiLight2.groundColor.setHSL( 0.1, 1, 0.4 )
+        hemiLight2.position.set( 0, 50, 0 )
+
         scene.add( hemiLight )
+        playerScene.add(hemiLight2)
     }
     //Add directional light
     {
@@ -497,7 +608,14 @@ function setupGraphics()
         dirLight.color.setHSL( 0.1, 1, 0.95 )
         dirLight.position.set( -1, 1.75, 1 )
         dirLight.position.multiplyScalar( 100 )
+
+        let dirLight2 = new THREE.DirectionalLight( 0xEA3E6D , 1)
+        dirLight2.color.setHSL( 0.1, 1, 0.95 )
+        dirLight2.position.set( -1, 1.75, 1 )
+        dirLight2.position.multiplyScalar( 100 )
+
         scene.add( dirLight )
+        playerScene.add(dirLight2)
 
         dirLight.castShadow = true
 
@@ -572,13 +690,16 @@ function setupGUI()
     }
 }
 
-function animate()
+const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth/2, window.innerHeight);
+const material2 = new THREE.MeshBasicMaterial({map: new THREE.WebGLRenderTarget(window.innerWidth/2, window.innerHeight)});
+function animate1()
 {
-       requestAnimationFrame(animate)
+    requestAnimationFrame(animate1)
     stats.begin()
     let deltaTime = clock.getDelta()
     movePlayer()
-
+    
+    {
     if(cameraMove.forward)
     camera.position.z-= cameraSpeed
     
@@ -592,7 +713,7 @@ function animate()
     if(cameraMove.right)
     camera.position.x -= Math.sin(camera.rotation.y - Math.PI/2) * cameraSpeed
     camera.position.z -= -Math.cos(camera.rotation.y - Math.PI/2) * cameraSpeed
-
+    }
     updatePhysics(deltaTime)
     onMouseOff()
     onMouseOver()
@@ -603,6 +724,23 @@ function animate()
     renderer.clear()
     renderer.render(falseScene, falseCamera)
     stats.end()
+}
+
+function animate2()
+{
+    requestAnimationFrame(animate2)
+    let deltaTime = clock.getDelta()
+    playerCamera.position.x = playerObj.position.x
+    playerCamera.position.y = playerObj.position.y + 2
+    playerCamera.position.z = playerObj.position.z
+
+
+    updatePhysics(deltaTime)
+    onMouseOff()
+    onMouseOver()
+    material2.map = renderTarget.texture;
+    material2.needsUpdate = true;
+    playerRender.render(playerScene, playerCamera)
 }
 
 function updatePhysics( deltaTime ) 

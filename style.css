@@ -1,0 +1,16 @@
+body
+{
+    margin: 0;
+}
+
+.display
+{
+    height: 500px;
+    width: 500px;
+}
+
+.playerPOV
+{
+    height: 40px;
+    width: 40px;
+}

@@ -2,12 +2,14 @@
     <head>
         <meta charset="utf-8">
         <title>JS 3D Physics</title>
-        <style>
-            body { margin: 0; }
-        </style>
+        <link rel="stylesheet" href="style.css"/>
     </head>
     <body>
-        <div id="devWindow"></div>
+        <div id="display">
+            <canvas id="devWindow"></canvas>
+            <canvas id="playerPOV"></canvas>
+        </div>
+
         <script src="lib/three.min.js"></script>
         <script src="lib/ammo.js"></script>
         <script src="lib/dat.gui.min.js"></script>
