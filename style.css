@@ -3,14 +3,13 @@ body
     margin: 0;
 }
 
-.display
+.canvas-container
 {
-    height: 500px;
-    width: 500px;
+    display: flex;
+    flex-wrap: wrap;
 }
-
-.playerPOV
+.canvas-container canvas
 {
-    height: 40px;
-    width: 40px;
+    width: 33%
+    
 }

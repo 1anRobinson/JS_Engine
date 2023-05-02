@@ -12,7 +12,7 @@ playerRender,
 
 rigidBodies = [], tmpTrans, // array for all threejs meshes that have a physics object
                             //  and temporary ammojs transform object
-windowHeight = window.innerHeight, windowWidth = window.innerWidth,//window.innerWidth,
+windowHeight = window.innerHeight, windowWidth = window.innerWidth / 2.5,//window.innerWidth,
 
 raycaster, mouse, intersects = [], selectedObj = null,
 cameraSpeed = 1.5,
@@ -21,23 +21,23 @@ falseCamera, falseScene, renderTexture, screenMaterial, display,
 falseCamera2, falseScene2, renderTexture2, screenMaterial2, display2
 
 let playerObj = null, playerTransform,
-cameraMove = {left: false, right: false, forward: false, back: false} 
+cameraMove = {left: false, right: false, forward: false, back: false, rLeft: false, rRight: false} 
 let colGroupPlane = 1, colGroupRedBall = 1, colGroupGreenBall = 1, colGroupBlock = 1
 const STATE = {DISABLE_DEACTIVATION : 4}
 
 { //player variables
     var playerProps = {
-        playerSpeed : 45,
+        playerSpeed : 1,
         X : 0,
         Y : 0,
         Z : 0,
-        jumpForce: 2,
+        jumpForce: 6,
         jumping: false,
         maxSpeed : 1,
-        friction : 2,
-        rollingFriction : 1000,
-        gravity: 6,
-        mass: 3,
+        friction : 3,
+        rollingFriction : 1,
+        gravity: 4,
+        mass: 1,
         spawnPlayer: function(X,Y,Z){},
     }
     var playerMovement =
@@ -295,6 +295,69 @@ function movePlayer()
     // setLinearVelocity imposes an even force
     physicsBody.applyImpulse( resultantImpulse ); 
 }
+
+function shoot()
+{
+    let quat = {x: 0, y: 0, z: 0, w: 1}
+    let mass = 0.5
+
+    //threeJS Section
+    var geometry = new THREE.SphereBufferGeometry(0.5)
+    var material = new THREE.MeshToonMaterial({
+        opacity: 0.1,
+        color: 0x000000,
+    })
+    let ball = new THREE.Mesh(geometry, material)
+    let ball2 = new THREE.Mesh(geometry, material)
+
+    ball.position.set(playerObj.position.x+1, playerObj.position.y, playerObj.position.z - 6)
+    ball2.position.set(playerObj.position.x+1, playerObj.position.y, playerObj.position.z - 6)
+
+    ball.castShadow = false
+    ball.receiveShadow = false
+
+    ball2.castShadow = false
+    ball2.receiveShadow = false
+
+    scene.add(ball)
+    playerScene.add(ball2)
+
+    //Ammojs Section
+    let transform = new Ammo.btTransform()
+    transform.setIdentity()
+    transform.setOrigin( new Ammo.btVector3(ball.position.x, ball.position.y, ball.position.z ) )
+    transform.setRotation( new Ammo.btQuaternion( quat.x, quat.y, quat.z, quat.w ) )
+    let motionState = new Ammo.btDefaultMotionState( transform )
+
+    let colShape = new Ammo.btSphereShape( 1 )
+    colShape.setMargin( 0.05 )
+
+    let localInertia = new Ammo.btVector3( ball.position.x, ball.position.y, ball.position.z)
+    colShape.calculateLocalInertia( mass, localInertia )
+
+    let rbInfo = new Ammo.btRigidBodyConstructionInfo( mass, motionState, colShape, localInertia )
+    let body = new Ammo.btRigidBody( rbInfo )
+
+    body.setFriction(ballProps.friction);
+    body.setRollingFriction(ballProps.rollingFriction);
+    physicsWorld.addRigidBody( body, colGroupRedBall, colGroupPlane | colGroupGreenBall )
+        
+    let resultantImpulse = new Ammo.btVector3( 0,0,-100 )
+    resultantImpulse.op_mul(2)
+    body.applyImpulse( resultantImpulse )
+    
+    ball.userData.physicsBody = body
+    ball2.userData.physicsBody = body  
+
+    rigidBodies.push(ball) 
+    rigidBodies.push(ball2)
+    // apply force is the most normal 
+    // applyImpulse is the yeet function
+    // setLinearVelocity imposes an even force
+ 
+
+}
+
 /**
  * function to call the setup functions
  */
@@ -304,7 +367,7 @@ function start()
     setupPhysicsWorld() 
     setupGraphics()
     setupGUI()
-    SpawnObjs.createBlock(100,100,2)
+    SpawnObjs.createBlock(1000,1000,2)
     SpawnObjs.createPlayer(0,4,0)
     animate1()
     animate2()
@@ -322,7 +385,7 @@ function getMouse(event)
 /**
  * Key pressed event handler
  */
-function keyDown(e) 
+function keyDown(e)
 {
     console.log(e.keyCode)
     switch(e.keyCode)
@@ -339,6 +402,12 @@ function keyDown(e)
         case 76: // L key
             cameraMove.right = true
             break
+        case 85: // U key
+            cameraMove.rLeft = true
+            break
+        case 79: // O key
+            cameraMove.rRight = true
+            break
 
         case 87: // W key
             playerMovement.forward = 1
@@ -352,8 +421,12 @@ function keyDown(e)
         case 68: // D key
             playerMovement.right = 1
             break
+        case 78: // N key
+            shoot()
+            break
         case 32: //space bar
             playerMovement.up = 1
+            e.preventDefault();
             break
     }
 }
@@ -374,6 +447,12 @@ function keyUp(e) {
             break
         case 76: // L key
             cameraMove.right = false
+            break
+        case 85: // U key
+            cameraMove.rLeft = false
+            break
+        case 79: // O key
+            cameraMove.rRight = false
             break
         
         case 87: // W key
@@ -396,14 +475,14 @@ function keyUp(e) {
 
 function onWindowResize()
 {
-    camera.aspect = window.innerWidth / window.innerHeight
+    camera.aspect = windowWidth /windowHeight
     camera.updateProjectionMatrix()
 
-    playerCamera.aspect = window.innerWidth / window.innerHeight
+    playerCamera.aspect = windowWidth / windowHeight
     playerCamera.updateProjectionMatrix()
 
-    renderer.setSize( window.innerWidth, window.innerHeight )
-    playerRender.setSize(window.innerWidth, window.innerHeight )
+    renderer.setSize( windowWidth, windowHeight )
+    playerRender.setSize(windowWidth, windowHeight )
 }
 
 window.addEventListener('mousemove', getMouse, false)
@@ -446,7 +525,7 @@ function setupPhysicsWorld()
         solver               = new Ammo.btSequentialImpulseConstraintSolver()
 
     physicsWorld = new Ammo.btDiscreteDynamicsWorld(dispatcher, overlappingPairCache, solver, collisionConfig)
-    physicsWorld.setGravity(new Ammo.btVector3(0, -10, 0))
+    physicsWorld.setGravity(new Ammo.btVector3(0, -20, 0))
 }
 /**
  * funtion to set up the threejs environment for displaying things on the screen
@@ -496,7 +575,7 @@ function setupGraphics()
 
         renderTexture = new THREE.WebGLRenderTarget(
             256, //resolution x
-            256, //resolution y
+            192, //resolution y
             {
             minFilter: THREE.LinearFilter,
             magFilter: THREE.NearestFilter,
@@ -517,44 +596,42 @@ function setupGraphics()
         quad = new THREE.Mesh(display, screenMaterial)
         quad.position.z = -100
         falseScene.add(quad)
+    
+        falseCamera2 = new THREE.OrthographicCamera(
+            windowWidth / -2, 
+            windowWidth / 2,
+            windowHeight / 2, 
+            windowHeight / -2,
+            -10000, 
+            10000)
+        falseCamera2.position.x = playerProps.X
+        falseCamera2.position.y = playerProps.Y
+        falseCamera2.position.z = playerProps.Z
+
+        renderTexture2 = new THREE.WebGLRenderTarget(
+            256, //resolution x
+            192, //resolution y
+            {
+            minFilter: THREE.LinearFilter,
+            magFilter: THREE.NearestFilter,
+            format: THREE.RGBFormat
+            })
+
+        screenMaterial2 = new THREE.ShaderMaterial({
+            uniforms: {
+            tDiffuse: {value: renderTexture2.texture}
+            },
+            vertexShader: document.getElementById('vertexshader').textContent,
+            fragmentShader: document.getElementById('fragmentshader').textContent,
+            depthWrite: false
+        })
+
+        // plane to display rendered texture
+        display2 = new THREE.PlaneGeometry(windowWidth, windowHeight)
+        quad2 = new THREE.Mesh(display2, screenMaterial2)
+        quad2.position.z = -100
+        falseScene2.add(quad2)
     }
-
-    // {
-    //     falseCamera2 = new THREE.OrthographicCamera(
-    //         windowWidth / -2, 
-    //         windowWidth / 2,
-    //         windowHeight / 2, 
-    //         windowHeight / -2,
-    //         -10000, 
-    //         10000)
-    //     falseCamera2.position.x = playerProps.X
-    //     falseCamera2.position.y = playerProps.Y
-    //     falseCamera2.position.z = playerProps.Z
-
-    //     renderTexture2 = new THREE.WebGLRenderTarget(
-    //         256, //resolution x
-    //         256, //resolution y
-    //         {
-    //         minFilter: THREE.LinearFilter,
-    //         magFilter: THREE.NearestFilter,
-    //         format: THREE.RGBFormat
-    //         })
-
-    //     screenMaterial2 = new THREE.ShaderMaterial({
-    //         uniforms: {
-    //         tDiffuse: {value: renderTexture2.texture}
-    //         },
-    //         vertexShader: document.getElementById('vertexshader').textContent,
-    //         fragmentShader: document.getElementById('fragmentshader').textContent,
-    //         depthWrite: false
-    //     })
-
-    //     // plane to display rendered texture
-    //     display2 = new THREE.PlaneGeometry(windowWidth, windowHeight)
-    //     quad2 = new THREE.Mesh(display2, screenMaterial2)
-    //     quad2.position.z = -100
-    //     falseScene2.add(quad2)
-    // }
 
     //Setup the renderer
     {
@@ -690,8 +767,6 @@ function setupGUI()
     }
 }
 
-const renderTarget = new THREE.WebGLRenderTarget(window.innerWidth/2, window.innerHeight);
-const material2 = new THREE.MeshBasicMaterial({map: new THREE.WebGLRenderTarget(window.innerWidth/2, window.innerHeight)});
 function animate1()
 {
     requestAnimationFrame(animate1)
@@ -699,20 +774,26 @@ function animate1()
     let deltaTime = clock.getDelta()
     movePlayer()
     
-    {
-    if(cameraMove.forward)
-    camera.position.z-= cameraSpeed
-    
-    if(cameraMove.left)
-    camera.position.x -= Math.sin(camera.rotation.y + Math.PI/2) * cameraSpeed
-    camera.position.z -= -Math.cos(camera.rotation.y + Math.PI/2) * cameraSpeed
-    
-    if(cameraMove.back)
-    camera.position.z+=cameraSpeed 
-    
-    if(cameraMove.right)
-    camera.position.x -= Math.sin(camera.rotation.y - Math.PI/2) * cameraSpeed
-    camera.position.z -= -Math.cos(camera.rotation.y - Math.PI/2) * cameraSpeed
+    { // Live camera movement
+        if(cameraMove.forward)
+        camera.position.z-= cameraSpeed
+        
+        if(cameraMove.left)
+        camera.position.x -= Math.sin(camera.rotation.y + Math.PI/2) * cameraSpeed
+        camera.position.z -= -Math.cos(camera.rotation.y + Math.PI/2) * cameraSpeed
+        
+        if(cameraMove.back)
+        camera.position.z+=cameraSpeed 
+        
+        if(cameraMove.right)
+        camera.position.x -= Math.sin(camera.rotation.y - Math.PI/2) * cameraSpeed
+        camera.position.z -= -Math.cos(camera.rotation.y - Math.PI/2) * cameraSpeed
+
+        if(cameraMove.rLeft)
+        camera.rotation.y += 0.05
+
+        if(cameraMove.rRight)
+        camera.rotation.y -= 0.05
     }
     updatePhysics(deltaTime)
     onMouseOff()
@@ -733,14 +814,16 @@ function animate2()
     playerCamera.position.x = playerObj.position.x
     playerCamera.position.y = playerObj.position.y + 2
     playerCamera.position.z = playerObj.position.z
+    // playerCamera.lookAt(mouse.y, mouse.x, 0)  
 
 
     updatePhysics(deltaTime)
-    onMouseOff()
-    onMouseOver()
-    material2.map = renderTarget.texture;
-    material2.needsUpdate = true;
+    playerRender.setRenderTarget(renderTexture2)
+    playerRender.clear()
     playerRender.render(playerScene, playerCamera)
+    playerRender.setRenderTarget(null)
+    playerRender.clear()
+    playerRender.render(falseScene2, falseCamera2)
 }
 
 function updatePhysics( deltaTime ) 
